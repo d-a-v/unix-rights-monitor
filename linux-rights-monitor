@@ -1,0 +1,212 @@
+#!/bin/sh
+# 
+# (BSD 2-clause License)
+#
+# Copyright (c) 2014, LAAS-CNRS
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or
+# without modification, are permitted provided that the
+# following conditions are met:
+# 
+# 1. Redistributions of source code must retain the above
+# copyright notice, this list of conditions and the following
+# disclaimer.
+# 
+# 2. Redistributions in binary form must reproduce the above
+# copyright notice, this list of conditions and the following
+# disclaimer in the documentation and/or other materials
+# provided with the distribution.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+# CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+# NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+# OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+# EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+version=00.20140414
+
+# linux specific, number of watched dir/files
+n=524288
+
+purpose ()
+{
+	cat << EOF
+
+On some directories shared by people, automatically set the
+owner/group/mode of created/modified files in background,
+started from user's .login/.profile, based on linux kernel
+inotify.
+
+example: 
+$1 -chgrp project -chmod g+w /net/server/project/work1 /net/server/project/work2
+
+EOF
+}
+
+#----------------------------------------------------------------------------
+
+help ()
+{
+	cat << EOF
+
+$1 [options] <directory> [<directory> ...]
+version: $version
+options:
+	-?|-h|--help		- 
+	-chmod <mode>		- 
+	-chown <owner[:group]>	- 
+	-chgrp <group>		- 
+	-v|-d			- verbose, no background, debug
+	-k			- stop monitoring (same directories must be provided)
+	-V			- show version
+`purpose $1`
+
+EOF
+}
+
+#----------------------------------------------------------------------------
+
+linuxwatch ()
+{
+	oldfile=""
+	qopt=""; $verbose || qopt="-q"
+	inotifywait -mr $qopt -e CREATE -e ATTRIB --format "%w%f" $directories | \
+	while read path; do
+		file=${path%/} # remove last /
+		if [ "$file" = "$oldfile" ]; then
+			oldfile=""
+		else
+			$verbose && echo "$file"
+			test -z "$owner" || chown $owner "$file"
+			test -z "$group" || chgrp $group "$file"
+			test -z "$mode" || chmod $mode "$file"
+			oldfile="$file"
+		fi
+	done
+}
+
+#----------------------------------------------------------------------------
+
+kill=false
+mode=""
+owner=""
+group=""
+verbose=false
+
+# check if running linux
+if [ ! -r /proc/sys/fs/inotify/max_user_watches ]; then
+	echo "$0: not running on linux"
+	exit 0
+fi
+
+# linux, check if limit is setup
+if [ "`cat /proc/sys/fs/inotify/max_user_watches`" -lt $n ]; then
+	cat << EOF 1>&2
+	$0: Please,
+	for now:	echo $n | sudo dd of=/proc/sys/fs/inotify/max_user_watches
+	forever:	echo "fs.inotify.max_user_watches=$n" > /etc/sysctl.d/90-backup-inotify.conf
+EOF
+	exit 1
+fi
+
+# linux, check if inotifywait is installed
+if ! which inotifywait > /dev/null 2> /dev/null ; then
+	echo "$0: please install:"
+	echo "	sudo apt-get install inotify-tools"
+	exit 1
+fi
+
+while [ ! -z "$1" ]; do case "$1" in
+	-\?|-h|--help)
+		help $0
+		exit 0
+		;;
+	
+	-chmod)
+		mode="$2"
+		shift
+		;;
+	
+	-chown)
+		owner="$2"
+		shift
+		;;
+	
+	-chgrp)
+		group="$2"
+		shift
+		;;
+	
+	-d|-v)
+		verbose=:
+		;;
+	
+	-k)
+		kill=:
+		;;
+	
+	-V)
+		echo $version
+		exit 0
+		;;
+		
+	*)
+		directories="$directories $1";
+		;;
+		
+esac; shift; done
+
+if test -z "$directories"; then
+	echo "no directory ?"
+	help "$0"
+	exit 1
+fi
+
+if test -z "$mode" -a -z "$owner" -a -z "$group"; then
+	echo "no action chosen ?"
+	help "$0"
+	exit 1
+fi
+
+# unique file name for user and directories to watch
+pidname="`basename $0`-`whoami`-`hostname`-$directories"
+pidfile="/tmp/`echo "$pidname" | sed -e "s,[/\ ],-,g" -e "s,-[-]*,-,g"`.pid"
+
+if [ -r "$pidfile" ]; then
+	pid=`cat $pidfile`
+	if ps $pid > /dev/null; then
+		if $kill; then
+			pkill -P $pid
+			rm -f "$pidfile"
+			echo "$0 gone"
+		else
+			echo "$0: already running ((p)pid $pid)"
+		fi
+		exit 0
+	fi
+	
+	# here: process not running
+	rm -f $pidfile
+fi
+
+# here, could not kill
+if $kill; then
+	echo "$pidfile not found, try 'killall inotifywait'"
+	exit 1
+fi
+
+if $verbose; then
+	linuxwatch
+else
+	linuxwatch 1> /dev/null 2>/dev/null & pid=$!
+	echo $pid > $pidfile
+fi
