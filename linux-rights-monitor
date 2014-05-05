@@ -42,11 +42,10 @@ purpose ()
 	cat << EOF
 
 On some directories shared by people, automatically set the
-owner/group/mode of created/modified files in background,
-started from user's .login/.profile, based on linux kernel
-inotify.
-
-example: 
+owner/group/mode of created files in background.
+Can be started from user's .login/.profile.based on linux
+kernel inotify.
+Example: 
 $1 -chgrp project -chmod g+w /net/server/project/work1 /net/server/project/work2
 
 EOF
@@ -77,20 +76,14 @@ EOF
 
 linuxwatch ()
 {
-	oldfile=""
 	qopt=""; $verbose || qopt="-q"
-	inotifywait -mr $qopt -e CREATE -e ATTRIB --format "%w%f" $directories | \
+	inotifywait -mr $qopt -e CREATE --format "%w%f" $directories | \
 	while read path; do
-		file=${path%/} # remove last /
-		if [ "$file" = "$oldfile" ]; then
-			oldfile=""
-		else
-			$verbose && echo "$file"
-			test -z "$owner" || chown $owner "$file"
-			test -z "$group" || chgrp $group "$file"
-			test -z "$mode" || chmod $mode "$file"
-			oldfile="$file"
-		fi
+		$verbose && echo "path='$path'"
+		test -z "$owner" || chown $owner "$path"
+		test -z "$group" || chgrp $group "$path"
+		test -z "$mode"  || chmod $mode  "$path"
+		oldpath="$path"
 	done
 }
 
