@@ -32,7 +32,10 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-version=00.20140414
+#version=00.20140414
+
+version=01.20140717
+# separate file and directories modes
 
 # linux specific, number of watched dir/files
 n=524288
@@ -42,11 +45,11 @@ purpose ()
 	cat << EOF
 
 On some directories shared by people, automatically set the
-owner/group/mode of created files in background.
-Can be started from user's .login/.profile.based on linux
-kernel inotify.
+owner/group/mode of created dir/files in background.
+Can be started from user's .login/.profile .
+Based on linux kernel inotify.
 Example: 
-$1 -chgrp project -chmod g+w /net/server/project/work1 /net/server/project/work2
+$1 -chgrp project -fchmod g+w -dchmod g+wx /net/server/project/work1 /net/server/project/work2
 
 EOF
 }
@@ -61,7 +64,8 @@ $1 [options] <directory> [<directory> ...]
 version: $version
 options:
 	-?|-h|--help		- 
-	-chmod <mode>		- 
+	-fchmod <file-mode>	- 
+	-dchmod <dir-mode>	- 
 	-chown <owner[:group]>	- 
 	-chgrp <group>		- 
 	-v|-d			- verbose, no background, debug
@@ -82,7 +86,8 @@ linuxwatch ()
 		$verbose && echo "path='$path'"
 		test -z "$owner" || chown $owner "$path"
 		test -z "$group" || chgrp $group "$path"
-		test -z "$mode"  || chmod $mode  "$path"
+		test -z "$fmode"  || { test -f "$path" && chmod $fmode "$path"; }
+		test -z "$dmode"  || { test -d "$path" && chmod $dmode "$path"; }
 		oldpath="$path"
 	done
 }
@@ -104,16 +109,16 @@ fi
 # linux, check if limit is setup
 if [ "`cat /proc/sys/fs/inotify/max_user_watches`" -lt $n ]; then
 	cat << EOF 1>&2
-	$0: Please,
-	for now:	echo $n | sudo dd of=/proc/sys/fs/inotify/max_user_watches
-	forever:	echo "fs.inotify.max_user_watches=$n" > /etc/sysctl.d/90-backup-inotify.conf
+	$0: Please do this first:
+	for now only:			echo $n | sudo dd of=/proc/sys/fs/inotify/max_user_watches
+	and persistant after reboot:	echo "fs.inotify.max_user_watches=$n" | sudo dd of=/etc/sysctl.d/90-backup-inotify.conf
 EOF
 	exit 1
 fi
 
 # linux, check if inotifywait is installed
 if ! which inotifywait > /dev/null 2> /dev/null ; then
-	echo "$0: please install:"
+	echo "$0: please install inotify-tools:"
 	echo "	sudo apt-get install inotify-tools"
 	exit 1
 fi
@@ -124,8 +129,13 @@ while [ ! -z "$1" ]; do case "$1" in
 		exit 0
 		;;
 	
-	-chmod)
-		mode="$2"
+	-fchmod)
+		fmode="$2"
+		shift
+		;;
+	
+	-dchmod)
+		dmode="$2"
 		shift
 		;;
 	
@@ -164,7 +174,7 @@ if test -z "$directories"; then
 	exit 1
 fi
 
-if test -z "$mode" -a -z "$owner" -a -z "$group"; then
+if test -z "$fmode" -a -z "$dmode" -a -z "$owner" -a -z "$group"; then
 	echo "no action chosen ?"
 	help "$0"
 	exit 1
