@@ -161,6 +161,12 @@ while [ ! -z "$1" ]; do case "$1" in
 		echo $version
 		exit 0
 		;;
+	
+	-*)
+		echo "invalid option '$1'"
+		help $0
+		exit 1
+		;;
 		
 	*)
 		directories="$directories $1";
@@ -173,8 +179,9 @@ if test -z "$directories"; then
 	help "$0"
 	exit 1
 fi
+	
 
-if test -z "$fmode" -a -z "$dmode" -a -z "$owner" -a -z "$group"; then
+if ! $kill && test -z "$fmode" -a -z "$dmode" -a -z "$owner" -a -z "$group"; then
 	echo "no action chosen ?"
 	help "$0"
 	exit 1
@@ -190,9 +197,9 @@ if [ -r "$pidfile" ]; then
 		if $kill; then
 			pkill -P $pid
 			rm -f "$pidfile"
-			echo "$0 gone"
+			echo "$0 (in $directories) gone"
 		else
-			echo "$0: already running ((p)pid $pid)"
+			echo "$0: already running (pid $pid)"
 		fi
 		exit 0
 	fi
@@ -211,5 +218,11 @@ if $verbose; then
 	linuxwatch
 else
 	linuxwatch 1> /dev/null 2>/dev/null & pid=$!
-	echo $pid > $pidfile
+	sleep 1
+	if ps $pid > /dev/null; then
+		echo $pid > $pidfile
+	else
+		echo "could not start:"
+		linuxwatch
+	fi
 fi
