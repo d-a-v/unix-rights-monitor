@@ -103,7 +103,7 @@ verbose=false
 # check if running linux
 if [ ! -r /proc/sys/fs/inotify/max_user_watches ]; then
 	echo "$0: not running on linux"
-	exit 0
+	exit 1
 fi
 
 # linux, check if limit is setup
@@ -188,7 +188,8 @@ if ! $kill && test -z "$fmode" -a -z "$dmode" -a -z "$owner" -a -z "$group"; the
 fi
 
 # unique file name for user and directories to watch
-pidname="`basename $0`-`whoami`-`hostname`-$directories"
+pidname="${0##*/}-${USER}-`hostname`-$directories"
+
 pidfile="/tmp/`echo "$pidname" | sed -e "s,[/\ ],-,g" -e "s,-[-]*,-,g"`.pid"
 
 if [ -r "$pidfile" ]; then
@@ -197,7 +198,7 @@ if [ -r "$pidfile" ]; then
 		if $kill; then
 			pkill -P $pid
 			rm -f "$pidfile"
-			echo "$0 (in $directories) gone"
+			echo "$0 (in$directories) gone"
 		else
 			echo "$0: already running (pid $pid)"
 		fi
@@ -218,6 +219,8 @@ if $verbose; then
 	linuxwatch
 else
 	linuxwatch 1> /dev/null 2>/dev/null & pid=$!
+	
+	#XXX be smarter than that
 	sleep 1
 	if ps $pid > /dev/null; then
 		echo $pid > $pidfile
