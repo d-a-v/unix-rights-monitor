@@ -32,24 +32,24 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#version=00.20140414
+version=00.20140918
 
-version=01.20140717
-# separate file and directories modes
+# linux specific, max number of watched dir/files (8192 seems to be the default)
+n=8192
+#n=524288
 
-# linux specific, number of watched dir/files
-n=524288
+# default minimum email interval
+interval_seconds=10
 
 purpose ()
 {
 	cat << EOF
 
-On some directories shared by people, automatically set the
-owner/group/mode of created dir/files in background.
+Automatically send email when new dir/files are created.
 Can be started from user's .login/.profile .
 Based on linux kernel inotify.
 Example: 
-$1 -chgrp project -fchmod g+w -dchmod g+wx /net/server/project/work1 /net/server/project/work2
+$1 -m me@some.where[,john@doe.again] [-m jane@iss.nasa] /ftpserver/proj1 [/net/repository/proj2 ...]
 
 EOF
 }
@@ -64,10 +64,9 @@ $1 [options] <directory> [<directory> ...]
 version: $version
 options:
 	-?|-h|--help		- 
-	-fchmod <file-mode>	- 
-	-dchmod <dir-mode>	- 
-	-chown <owner[:group]>	- 
-	-chgrp <group>		- 
+	-i <interval>		- minimum interval between mails (seconds, default: $interval_seconds)
+	-s <'email subject'>	- email subject
+	-m <e@mail[,e@mail...]>	- e-mail address list
 	-v|-d			- verbose, no background, debug
 	-k			- stop monitoring (same directories must be provided)
 	-V			- show version
@@ -78,16 +77,36 @@ EOF
 
 #----------------------------------------------------------------------------
 
+
+mailer ()
+{
+	while :; do
+		sleep "$interval_seconds"
+		test -f $pid || break
+		if [ -r $pool ]; then
+			mv $pool $pool.now
+			(
+				echo "Subject: $subject (${directories# })"
+				echo ""
+				echo "# theses file have been created during the last $interval seconds:"
+				LANG=C date '+# %c'
+				echo ""
+				cat $pool.now
+			) | sendmail "$email" && rm -f $pool.now
+		fi
+	done
+}
+
 linuxwatch ()
 {
+	mailer 1>/dev/null 2>/dev/null & # autosuicide-selfkiller
+	
 	qopt=""; $verbose || qopt="-q"
+
 	inotifywait -mr $qopt -e CREATE --format "%w%f" $directories | \
 	while read path; do
 		$verbose && echo "path='$path'"
-		test -z "$owner" || chown $owner "$path"
-		test -z "$group" || chgrp $group "$path"
-		test -z "$fmode"  || { test -f "$path" && chmod $fmode "$path"; }
-		test -z "$dmode"  || { test -d "$path" && chmod $dmode "$path"; }
+		echo "$path" >> $pool
 	done
 }
 
@@ -128,26 +147,22 @@ while [ ! -z "$1" ]; do case "$1" in
 		exit 0
 		;;
 	
-	-fchmod)
-		fmode="$2"
+	-i)
+		interval_seconds="$2"
 		shift
 		;;
 	
-	-dchmod)
-		dmode="$2"
+	-m)
+		email="$email,$2"
+		email="${email#,}"
 		shift
 		;;
 	
-	-chown)
-		owner="$2"
+	-s)
+		subject="$2"
 		shift
 		;;
-	
-	-chgrp)
-		group="$2"
-		shift
-		;;
-	
+
 	-d|-v)
 		verbose=:
 		;;
@@ -180,16 +195,16 @@ if test -z "$directories"; then
 fi
 	
 
-if ! $kill && test -z "$fmode" -a -z "$dmode" -a -z "$owner" -a -z "$group"; then
-	echo "no action chosen ?"
+if ! $kill && test -z "$email" -o -z "$subject"; then
+	echo "$0: email and subject are mandatory"
 	help "$0"
 	exit 1
 fi
 
-# unique file name for user and directories to watch
-pidname="${0##*/}-${USER}-`hostname`-$directories"
-
-pidfile="/tmp/`echo "$pidname" | sed -e "s,[/\ ],-,g" -e "s,-[-]*,-,g"`.pid"
+# unique name for user and directories to watch
+name=`echo "${0##*/}-${USER}-\`hostname\`-$directories" | sed -e 's,[/\ ],-,g' -e 's,-[-]*,-,g'`
+pool=/tmp/$name.pool
+pidfile=/tmp/$name.pid
 
 if [ -r "$pidfile" ]; then
 	pid=`cat $pidfile`
@@ -206,6 +221,7 @@ if [ -r "$pidfile" ]; then
 	
 	# here: process not running
 	rm -f $pidfile
+	rm -f $pool
 fi
 
 # here, could not kill
@@ -213,6 +229,9 @@ if $kill; then
 	echo "$pidfile not found, try 'killall inotifywait'"
 	exit 1
 fi
+
+# check interval
+[ "$interval_seconds" -gt 0 ] || { echo "bad interval: '$interval_seconds'"; exit 1; }
 
 if $verbose; then
 	linuxwatch
@@ -226,5 +245,6 @@ else
 	else
 		echo "could not start:"
 		linuxwatch
+		rm -f $pool
 	fi
 fi
