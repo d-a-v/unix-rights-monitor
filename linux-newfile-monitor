@@ -49,7 +49,8 @@ Automatically send email when new dir/files are created.
 Can be started from user's .login/.profile .
 Based on linux kernel inotify.
 Example: 
-$1 -m me@some.where[,john@doe.again] [-m jane@iss.nasa] /ftpserver/proj1 [/net/repository/proj2 ...]
+$1 -m me@some.where,you@some.where -s 'moves happened' /ftpserver/proj1 
+$1 -m me@some.where -m you@some.where -s 'moves happened' /ftpserver/proj1 /net/repository/proj2
 
 EOF
 }
@@ -88,8 +89,8 @@ mailer ()
 			(
 				echo "Subject: $subject (${directories# })"
 				echo ""
+				LC_ALL=C date '+# at %c,'
 				echo "# theses file were opened in write mode and have been closed during the last $interval_seconds seconds:"
-				LANG=C date '+# %c'
 				echo ""
 				cat $pool.now
 			) | sendmail "$email" && rm -f $pool.now
