@@ -88,7 +88,7 @@ mailer ()
 			(
 				echo "Subject: $subject (${directories# })"
 				echo ""
-				echo "# theses file have been created during the last $interval_seconds seconds:"
+				echo "# theses file were opened in write mode and have been closed during the last $interval_seconds seconds:"
 				LANG=C date '+# %c'
 				echo ""
 				cat $pool.now
@@ -103,7 +103,7 @@ linuxwatch ()
 	
 	qopt=""; $verbose || qopt="-q"
 
-	inotifywait -mr $qopt -e CREATE --format "%w%f" $directories | \
+	inotifywait -mr $qopt -e CLOSE_WRITE --format "%w%f" $directories | \
 	while read path; do
 		$verbose && echo "path='$path'"
 		echo "$path" >> $pool
