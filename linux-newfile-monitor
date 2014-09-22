@@ -32,7 +32,7 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-version=00.20140918
+version=00.20140919
 
 # linux specific, max number of watched dir/files (8192 seems to be the default)
 n=8192
