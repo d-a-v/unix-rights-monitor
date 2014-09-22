@@ -90,7 +90,7 @@ mailer ()
 				echo "Subject: $subject (${directories# })"
 				echo ""
 				LC_ALL=C date '+# at %c,'
-				echo "# theses file were opened in write mode and have been closed during the last $interval_seconds seconds:"
+				echo "# these files were opened in write mode and have been closed during the last $interval_seconds seconds:"
 				echo ""
 				cat $pool.now
 			) | sendmail "$email" && rm -f $pool.now
